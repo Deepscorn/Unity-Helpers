@@ -3,14 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using UniRx;
 using UnityEditor;
 using UnityEngine;
 
 namespace UnityHelpers
 {
-    public class ResourcesEnumerator : EditorWindow
-    {
-        private const string FileTemplate = @"using System;
+	public class ResourcesEnumerator : EditorWindow
+	{
+		private const string FileTemplate = @"using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -20,99 +21,140 @@ namespace &&NAMESPACE&&
 &&CLASSES&&
 }
 ";
+		private const string FieldTemplate = @"public const string &&FIELD-NAME&& = ""&&FIELD-VALUE&&"";\n";
 
-        private const string ClassTemplate = @"public class &&CLASS-NAME&&
-{
-&&CLASS-CONTENTS&&
-}";
+		public string outputPath;
+		public string pathToResourcesFolder;
+		public string outputNamespace;
 
-        public string outputPath;
-        public string pathToResourcesFolder;
-        public string outputNamespace;
+		//TODO
+		private static readonly HashSet<char> removeChars = new HashSet<char> {'.', '!', ' '};
 
-        [MenuItem("Unity Helpers/Enumerate Resources")]
-        public static void Init()
-        {
-            // Get existing open window or if none, make a new one:		
-            var window = new ResourcesEnumerator();
-            window.title = "Enumerate Resources";
-            window.outputPath = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToSaveTo");
-            window.pathToResourcesFolder = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToResourcesFolder");
-            window.outputNamespace = EditorPrefs.GetString("UnityHelpers_GenerateResources_outputNamespace");
-            if (String.IsNullOrEmpty(window.outputPath)) window.outputPath = "Scripts/GameResources.cs";
-            if (String.IsNullOrEmpty(window.pathToResourcesFolder)) window.pathToResourcesFolder = "Resources";
-            if (String.IsNullOrEmpty(window.outputNamespace)) window.outputNamespace = "UnityHelpers";
-                        
-            window.ShowAuxWindow();
-        }
+		[MenuItem("Unity Helpers/Enumerate Resources")]
+		public static void Init()
+		{
+			// Get existing open window or if none, make a new one:
+			var window = new ResourcesEnumerator();
+			window.title = "Enumerate Resources";
+			window.outputPath = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToSaveTo");
+			window.pathToResourcesFolder = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToResourcesFolder");
+			window.outputNamespace = EditorPrefs.GetString("UnityHelpers_GenerateResources_outputNamespace");
+			if (String.IsNullOrEmpty(window.outputPath)) window.outputPath = "Scripts/GameResources.cs";
+			if (String.IsNullOrEmpty(window.pathToResourcesFolder)) window.pathToResourcesFolder = "Resources";
+			if (String.IsNullOrEmpty(window.outputNamespace)) window.outputNamespace = "UnityHelpers";
 
-        void OnGUI()
-        {
-            pathToResourcesFolder = EditorGUILayout.TextField("Resources Folder", pathToResourcesFolder);
-            outputPath = EditorGUILayout.TextField("Output Folder", outputPath);
-            outputNamespace = EditorGUILayout.TextField("Output Namespace", outputNamespace);
+			window.ShowAuxWindow();
+		}
 
-            if (GUILayout.Button("Enumerate", GUILayout.Height(50)))
-            {
-                var classes = new List<string>();
-                var c = GetClass("Assets/" + pathToResourcesFolder, Path.GetFileNameWithoutExtension(outputPath), 0);
-                c = String.Join("\n", c.Split('\n').ToList().ConvertAll(l => "\t" + l).ToArray());
-                File.WriteAllText(Application.dataPath + "/" + outputPath, FileTemplate.Replace("&&CLASSES&&", c).Replace("&&NAMESPACE&&", outputNamespace));
-                AssetDatabase.Refresh();
-                Close();
-            }
+		void OnGUI()
+		{
+			pathToResourcesFolder = EditorGUILayout.TextField("Resources Folder", pathToResourcesFolder);
+			outputPath = EditorGUILayout.TextField("Output Folder", outputPath);
+			outputNamespace = EditorGUILayout.TextField("Output Namespace", outputNamespace);
 
-            // Save the settings
-            EditorPrefs.SetString("UnityHelpers_GenerateResources_pathToSaveTo", outputPath);
-            EditorPrefs.SetString("UnityHelpers_GenerateResources_pathToResourcesFolder", pathToResourcesFolder);
-            EditorPrefs.SetString("UnityHelpers_GenerateResources_outputNamespace", outputNamespace);
-        }
+			if (GUILayout.Button("Enumerate", GUILayout.Height(50)))
+			{
+				var classes = new List<string>();
+				ParseFiles("Assets/" + pathToResourcesFolder)
+					.Select(c => String.Join("\n", c.Split('\n').ToList().ConvertAll(l => "\t" + l).ToArray()))
+					.ObserveOnMainThread()
+					.Subscribe(c =>
+					{
+						File.WriteAllText(Application.dataPath + "/" + outputPath,
+							FileTemplate.Replace("&&CLASSES&&", c).Replace("&&NAMESPACE&&", outputNamespace));
+						AssetDatabase.Refresh();
+						Close();
+					});
+			}
 
-        private string GetClass(string path, string className, int depth)
-        {
-            var assetPaths = new List<string>(AssetDatabase.FindAssets("*.*", new[] { "Assets/" + pathToResourcesFolder })).ConvertAll(guid => AssetDatabase.GUIDToAssetPath(guid));
-            var classes = new List<string>();
-            var files = new List<string>();
+			// Save the settings
+			EditorPrefs.SetString("UnityHelpers_GenerateResources_pathToSaveTo", outputPath);
+			EditorPrefs.SetString("UnityHelpers_GenerateResources_pathToResourcesFolder", pathToResourcesFolder);
+			EditorPrefs.SetString("UnityHelpers_GenerateResources_outputNamespace", outputNamespace);
+		}
 
-            foreach (var assetPath in assetPaths)
-            {
-                // Is it not the immediate directory then continue
-                if (Path.GetDirectoryName(assetPath).Replace(path,"") != "") continue;
+		private IObservable<string> ObserveFilesExcludingMetas(string root)
+		{
+			return Observable.Create<string>(observer =>
+			{
+				var paths = Directory.GetFileSystemEntries(root);
+				foreach (var path in paths)
+				{
+					if (Path.GetExtension(path) == ".meta")
+					{
+						continue;
+					}
+					observer.OnNext(path.Replace("\\", "/"));
+				}
+				observer.OnCompleted();
+				return Disposable.Create(() => { });
+			});
+		}
 
-                // If its a directory then recurse
-                if (!Path.HasExtension(assetPath))
-                {
-                    var dname = assetPath.Replace(path, "").Replace("/", "").Replace(" ", "");
-                    classes.Add(GetClass(assetPath, dname, depth+1));
-                }
-                else files.Add(assetPath);
-            }
+		private IObservable<bool> IsDirectory(string path)
+		{
+			return Observable.Start(() =>
+				(File.GetAttributes(path) & FileAttributes.Directory) == FileAttributes.Directory);
+		}
 
-            var lines = new List<string>();
+		private string Parse(string path)
+		{
+			var from = Path.GetFileName(path);
+			var resultBuilder = new StringBuilder();
+			var makeUpper = true;
+			foreach (var character in from)
+			{
+				if (removeChars.Contains(character))
+				{
+					makeUpper = true;
+				}
+				else
+				{
+					resultBuilder.Append(makeUpper ? Char.ToUpper(character) : character);
+					makeUpper = false;
+				}
+			}
+			return resultBuilder.ToString();
+		}
 
-            lines.AddRange(classes);
-            lines.AddRange(files.Distinct().ToList().ConvertAll(f =>
-            {
-                var fileName = Path.GetFileName(f);
-                var fileExtension = Path.GetExtension(f);
-                var varName = Path.GetFileNameWithoutExtension(f).Replace(" ", "");
-                if (Char.IsNumber(varName[0])) varName = "_" + varName;
-                varName = varName.Replace("-", "Minus");
-                var strPath = Path.GetDirectoryName(f).Replace("Assets/" + pathToResourcesFolder, "") + "/" + Path.GetFileNameWithoutExtension(f);
-                if (strPath[0] == '/') strPath = strPath.Substring(1);
-                if (fileExtension == ".unity") strPath = Path.GetFileNameWithoutExtension(f);
-                return "\tpublic const string " + varName + " = \"" + strPath + "\";";                
-            }));
+		private string ParseSingle(string path)
+		{
+			var parsed = Parse(path);
+			return FieldTemplate.Replace("&&FIELD-NAME&&", parsed)
+				.Replace("&&FIELD-VALUE&&", path);
+		}
 
-            // Add this path
-            lines.Add("\tpublic const string _Path = \"" + path.Replace("Assets/Resources/","") + "\";");
+		private string ParseMultiple(IList<string> arrayOfParsed)
+		{
+			var parsed = Parse(arrayOfParsed[0]);
+			var resultBuilder = new StringBuilder();
+			resultBuilder.Append("public class ").Append(parsed).Append("\n{\n");
+			for (int i = 1; i < arrayOfParsed.Count; ++i)
+			{
+				resultBuilder.Append(arrayOfParsed[i]);
+			}
+			resultBuilder.Append("}");
+			return resultBuilder.ToString();
+		}
 
-            var contents = String.Join("\n", lines.ToArray());
-
-            var tabs = "";
-            for(var i=0; i<Math.Max(depth,0); i++) tabs += "\t";
-            var c = ClassTemplate.Replace("&&CLASS-NAME&&", className).Replace("&&CLASS-CONTENTS&&", contents);
-            return String.Join("\n", c.Split('\n').ToList().ConvertAll(l => tabs + l).ToArray());
-        }
-    }
+		private IObservable<string> ParseFiles(string root)
+		{
+			return IsDirectory(root)
+				.SelectMany(isDirectory =>
+				{
+					if (!isDirectory)
+					{
+						return Observable.Return(ParseSingle(root));
+					}
+					return Observable.Return(root)
+						.Concat(ObserveFilesExcludingMetas(root)
+							.SelectMany(child => ParseFiles(child)))
+						.ToList()
+						.SelectMany(parsedChildren => parsedChildren.Count == 1
+							? Observable.Empty<IList<string>>()
+							: Observable.Return(parsedChildren))
+						.Select(parsedChildren => ParseMultiple(parsedChildren));
+				});
+		}
+	}
 }
