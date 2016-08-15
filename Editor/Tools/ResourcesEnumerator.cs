@@ -11,11 +11,7 @@ namespace UnityHelpers
 {
     public class ResourcesEnumerator : EditorWindow
     {
-        private const string FileTemplate = @"using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-
+        private const string FileTemplate = @"
 namespace &&NAMESPACE&&
 {
 &&CLASSES&&
@@ -40,7 +36,7 @@ namespace &&NAMESPACE&&
             window.outputPath = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToSaveTo");
             window.pathToResourcesFolder = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToResourcesFolder");
             window.outputNamespace = EditorPrefs.GetString("UnityHelpers_GenerateResources_outputNamespace");
-            if (String.IsNullOrEmpty(window.outputPath)) window.outputPath = "Generated/R.cs";
+            if (String.IsNullOrEmpty(window.outputPath)) window.outputPath = "UnityHelperGenerated/R.cs";
             if (String.IsNullOrEmpty(window.pathToResourcesFolder)) window.pathToResourcesFolder = ResourcesDirName;
             if (String.IsNullOrEmpty(window.outputNamespace)) window.outputNamespace = "UnityHelpers";
 
@@ -151,8 +147,6 @@ namespace &&NAMESPACE&&
             return resultBuilder.ToString();
         }
 
-        // TODO: substring from "Resources/"
-        // rename Resources to R
         private IObservable<string> ParseFiles(string root)
         {
             return IsDirectory(root)
