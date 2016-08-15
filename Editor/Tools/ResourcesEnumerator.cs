@@ -21,7 +21,7 @@ namespace &&NAMESPACE&&
 &&CLASSES&&
 }
 ";
-        private const string FieldTemplate = @"public const string &&FIELD-NAME&& = ""&&FIELD-VALUE&&"";\n";
+        private const string FieldTemplate = "public const string &&FIELD-NAME&& = \"&&FIELD-VALUE&&\";\n";
 
         public string outputPath;
         public string pathToResourcesFolder;
