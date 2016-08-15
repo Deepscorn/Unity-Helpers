@@ -22,6 +22,7 @@ namespace &&NAMESPACE&&
 }
 ";
         private const string FieldTemplate = "public const string &&FIELD-NAME&& = \"&&FIELD-VALUE&&\";\n";
+        private const string ResourcesDirName = "Resources";
 
         public string outputPath;
         public string pathToResourcesFolder;
@@ -39,8 +40,8 @@ namespace &&NAMESPACE&&
             window.outputPath = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToSaveTo");
             window.pathToResourcesFolder = EditorPrefs.GetString("UnityHelpers_GenerateResources_pathToResourcesFolder");
             window.outputNamespace = EditorPrefs.GetString("UnityHelpers_GenerateResources_outputNamespace");
-            if (String.IsNullOrEmpty(window.outputPath)) window.outputPath = "Scripts/GameResources.cs";
-            if (String.IsNullOrEmpty(window.pathToResourcesFolder)) window.pathToResourcesFolder = "Resources";
+            if (String.IsNullOrEmpty(window.outputPath)) window.outputPath = "Generated/R.cs";
+            if (String.IsNullOrEmpty(window.pathToResourcesFolder)) window.pathToResourcesFolder = ResourcesDirName;
             if (String.IsNullOrEmpty(window.outputNamespace)) window.outputNamespace = "UnityHelpers";
 
             window.ShowAuxWindow();
@@ -54,7 +55,6 @@ namespace &&NAMESPACE&&
 
             if (GUILayout.Button("Enumerate", GUILayout.Height(50)))
             {
-                var classes = new List<string>();
                 ParseFiles("Assets/" + pathToResourcesFolder)
                     .Select(c => String.Join("\n", c.Split('\n').ToList().ConvertAll(l => "\t" + l).ToArray()))
                     .ObserveOnMainThread()
@@ -117,16 +117,27 @@ namespace &&NAMESPACE&&
             return resultBuilder.ToString();
         }
 
+        private string PathForUnityResourcesLoader(string path)
+        {
+            var index = path.LastIndexOf(ResourcesDirName);
+            return index == -1 ? path : path.Substring(index + ResourcesDirName.Length);
+        }
+
         private string ParseSingle(string path)
         {
-            var parsed = Parse(path);
-            return FieldTemplate.Replace("&&FIELD-NAME&&", parsed)
-                .Replace("&&FIELD-VALUE&&", path);
+            var name = Parse(path);
+            var value = PathForUnityResourcesLoader(path);
+            return FieldTemplate.Replace("&&FIELD-NAME&&", name)
+                .Replace("&&FIELD-VALUE&&", value);
         }
 
         private string ParseMultiple(IList<string> arrayOfParsed)
         {
             var parsed = Parse(arrayOfParsed[0]);
+            if (parsed == ResourcesDirName)
+            {
+                parsed = "R";
+            }
             var resultBuilder = new StringBuilder();
             resultBuilder.Append("public class ").Append(parsed).Append("\n{\n");
             for (int i = 1; i < arrayOfParsed.Count; ++i)
@@ -137,6 +148,8 @@ namespace &&NAMESPACE&&
             return resultBuilder.ToString();
         }
 
+        // TODO: substring from "Resources/"
+        // rename Resources to R
         private IObservable<string> ParseFiles(string root)
         {
             return IsDirectory(root)
