@@ -1,6 +1,8 @@
 Unity-Helpers
 =============
 
+NOTE: This fork has some small improvements and bugfixes but requires https://github.com/neuecc/UniRx to work. I appreciate much the original work of mikecann.
+
 A set of utils and extensions for making unity development easier.
 
 Unity is a great tool for making games however there are a few annoyances with its API that I have tried to fix with this library. 
