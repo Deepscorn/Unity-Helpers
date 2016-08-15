@@ -119,8 +119,11 @@ namespace &&NAMESPACE&&
 
         private string PathForUnityResourcesLoader(string path)
         {
-            var index = path.LastIndexOf(ResourcesDirName);
-            return index == -1 ? path : path.Substring(index + ResourcesDirName.Length);
+            var index = path.LastIndexOf('.');
+            var result = index == -1 ? path : path.Substring(0, index);
+            index = result.LastIndexOf(ResourcesDirName);
+            result = index == -1 ? result : result.Substring(index + ResourcesDirName.Length + 1);
+            return result;
         }
 
         private string ParseSingle(string path)
